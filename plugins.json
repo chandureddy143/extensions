@@ -1,0 +1,62 @@
+[
+    {
+        "fileHash": "sha256-f67757e6b8d59c747464bb6749080219cffb56d1f1d39b05eedef740c2ae5b0f",
+        "apiVersion": 1,
+        "repositoryUrl": "https://github.com/chandureddy143/extensions",
+        "fileSize": 2667,
+        "status": 3,
+        "authors": [
+            
+        ],
+        "version": -1,
+        "internalName": "TeluguProvider",
+        "url": "https://raw.githubusercontent.com/chandureddy143/extensions/builds/TeluguProvider.cs3",
+        "name": "TeluguProvider"
+    },
+    {
+        "iconUrl": "https://www.google.com/s2/favicons?domain=twitch.tv&sz=%size%",
+        "jarFileSize": 56997,
+        "fileHash": "sha256-9decae7de6d70d1da8464b16f662a025ba3fcda8707d7d8d8d2c3594b551fda8",
+        "apiVersion": 1,
+        "repositoryUrl": "https://github.com/chandureddy143/extensions",
+        "fileSize": 15239,
+        "status": 1,
+        "authors": [
+            "CranberrySoup"
+        ],
+        "tvTypes": [
+            "Live"
+        ],
+        "version": 2,
+        "internalName": "TwitchProvider",
+        "jarUrl": "https://raw.githubusercontent.com/chandureddy143/extensions/builds/TwitchProvider.jar",
+        "description": "Watch livestreams from Twitch",
+        "url": "https://raw.githubusercontent.com/chandureddy143/extensions/builds/TwitchProvider.cs3",
+        "name": "TwitchProvider",
+        "jarHash": "sha256-00f575088c4de17bdc3cc108110fb7f48f03d1cc0a8fa22801dd41f3c58cedcf"
+    },
+    {
+        "iconUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/0/09/YouTube_full-color_icon_%282017%29.svg/3840px-YouTube_full-color_icon_%282017%29.svg.png",
+        "jarFileSize": 46472,
+        "fileHash": "sha256-022f1a17ef93fb47cec55f9983006ea4f5c794cef009d7991d50d9f46c5440ad",
+        "apiVersion": 1,
+        "repositoryUrl": "https://github.com/chandureddy143/extensions",
+        "fileSize": 13156,
+        "status": 1,
+        "authors": [
+            "KaifTaufiq"
+        ],
+        "tvTypes": [
+            "Other",
+            "Live",
+            "TvSeries"
+        ],
+        "version": 1,
+        "internalName": "YoutubeProvider",
+        "jarUrl": "https://raw.githubusercontent.com/chandureddy143/extensions/builds/YoutubeProvider.jar",
+        "description": "Watch Youtube in Cloudstream",
+        "url": "https://raw.githubusercontent.com/chandureddy143/extensions/builds/YoutubeProvider.cs3",
+        "name": "YoutubeProvider",
+        "jarHash": "sha256-1c8b46cb213182162a3cbf66eb3137b3c0a3c5c947e0e906277d1ac6cd7d95f4"
+    }
+]
