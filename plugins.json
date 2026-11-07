@@ -1,7 +1,7 @@
 [
     {
         "jarFileSize": 35276,
-        "fileHash": "sha256-4da4949ab313f1ba87034ce049aab95e48bf207770994ef04927b663cab8678e",
+        "fileHash": "sha256-f7d6ae30853629701049ba34a9c9a8bafc62e83abe504703091527611d45b39b",
         "apiVersion": 1,
         "repositoryUrl": "https://github.com/chandureddy143/extensions",
         "fileSize": 11030,
@@ -12,7 +12,7 @@
         "tvTypes": [
             "Movie"
         ],
-        "version": 1,
+        "version": 2,
         "internalName": "TeluguProvider",
         "jarUrl": "https://raw.githubusercontent.com/chandureddy143/extensions/builds/TeluguProvider.jar",
         "description": "MovieRulz Telugu Provider",
