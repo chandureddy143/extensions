@@ -1,10 +1,10 @@
 [
     {
-        "jarFileSize": 29340,
-        "fileHash": "sha256-d6541810e51f44423844b819f5ed9849cfabb7c7532bf928e2417745d6856aed",
+        "jarFileSize": 35276,
+        "fileHash": "sha256-4da4949ab313f1ba87034ce049aab95e48bf207770994ef04927b663cab8678e",
         "apiVersion": 1,
         "repositoryUrl": "https://github.com/chandureddy143/extensions",
-        "fileSize": 8545,
+        "fileSize": 11030,
         "status": 1,
         "authors": [
             "Chandu"
@@ -18,7 +18,7 @@
         "description": "MovieRulz Telugu Provider",
         "url": "https://raw.githubusercontent.com/chandureddy143/extensions/builds/TeluguProvider.cs3",
         "name": "TeluguProvider",
-        "jarHash": "sha256-6f02356c68222f0d8d030ecedc489a5ac86448a632262d89cf217f9132c3354b"
+        "jarHash": "sha256-f576b8d4653fb6a03910c073202fb9a1f3151dc4fc73fcc612e224ee05619570"
     },
     {
         "iconUrl": "https://www.google.com/s2/favicons?domain=twitch.tv&sz=%size%",
