@@ -1,9 +1,9 @@
 [
     {
-        "fileHash": "sha256-4b74806f35f326cf3820fe0ab15823af4be9728ad8e149dbba39fa4efc80fd6f",
+        "fileHash": "sha256-3b4aea14c74f2e6739986a262de60e508a2730ee528ca1c3676a4bdbc63fea05",
         "apiVersion": 1,
         "repositoryUrl": "https://github.com/chandureddy143/extensions",
-        "fileSize": 19929,
+        "fileSize": 21183,
         "status": 1,
         "authors": [
             "Chandu"
