@@ -22,18 +22,27 @@ class TeluguProvider : MainAPI() {
     private val tag = "TeluguDbg"
 
     override val mainPage = mainPageOf(
+        "$mainUrl/category/telugu-featured" to "Telugu Featured",
         "$mainUrl/category/telugu-movies-2026" to "Telugu 2026",
         "$mainUrl/category/telugu-movies-2025" to "Telugu 2025",
         "$mainUrl/category/telugu-movies-2024" to "Telugu 2024",
+        "$mainUrl/category/telugu-movies-2023" to "Telugu 2023",
+        "$mainUrl/category/telugu-movies-2022" to "Telugu 2022",
         "$mainUrl/language/telugu-dubbed" to "Telugu Dubbed"
     )
 
     // ---------- listing ----------
 
-    private fun Document.parseCards(): List<SearchResponse> =
-        select("a[href$=.html]:has(img)")
-            .mapNotNull { it.toSearchResult() }
-            .distinctBy { it.url }
+    // Movie cards look like: <li><div class="boxed film"><a title=".." href="..html"><img></a>
+    // We read only the main area (not the sidebar), and fall back to title-only links.
+    private fun Document.parseCards(): List<SearchResponse> {
+        val scope: Element = selectFirst("#main") ?: this
+        var links = scope.select("a[href$=.html]").filter { it.selectFirst("img") != null }
+        if (links.isEmpty()) {
+            links = scope.select("a[href$=.html]").filter { it.attr("title").isNotBlank() }
+        }
+        return links.mapNotNull { it.toSearchResult() }.distinctBy { it.url }
+    }
 
     private fun Element.toSearchResult(): SearchResponse? {
         val href = fixUrl(attr("href"))
@@ -53,6 +62,7 @@ class TeluguProvider : MainAPI() {
         val url = if (page <= 1) request.data else "${request.data.trimEnd('/')}/page/$page"
         val doc = app.get(url, referer = mainUrl).document
         val home = doc.parseCards()
+        Log.d(tag, "list url=$url cards=${home.size}")
         // page < 20 stops endless paging if the site repeats the last page
         return newHomePageResponse(request.name, home, hasNext = home.isNotEmpty() && page < 20)
     }
@@ -68,6 +78,7 @@ class TeluguProvider : MainAPI() {
             } catch (e: Exception) {
                 emptyList()
             }
+            Log.d(tag, "search url=$u results=${results.size}")
             if (results.isNotEmpty()) return results
         }
         return emptyList()
