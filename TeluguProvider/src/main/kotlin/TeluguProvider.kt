@@ -8,6 +8,7 @@ import com.lagradost.nicehttp.NiceResponse
 import kotlin.coroutines.cancellation.CancellationException
 import org.jsoup.nodes.Document
 import org.jsoup.nodes.Element
+import java.net.InetAddress
 import java.net.URLEncoder
 
 class TeluguProvider : MainAPI() {
@@ -85,11 +86,47 @@ class TeluguProvider : MainAPI() {
             ?: doc.selectFirst("meta[property=og:description]")?.attr("content")
         val year = Regex("""\((\d{4})\)""").find(title)?.groupValues?.get(1)?.toIntOrNull()
 
+        val report = try {
+            serverReport(doc)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            ""
+        }
+
         return newMovieLoadResponse(title, url, TvType.Movie, url) {
             this.posterUrl = poster
-            this.plot = plot
+            this.plot = listOfNotNull(plot, report.ifBlank { null }).joinToString("\n\n")
             this.year = year
         }
+    }
+
+    // Shown at the bottom of the movie description inside the app:
+    // which video servers this page lists, and whether your phone can find them.
+    // Set to false to hide it once everything works.
+    private val showReport = true
+
+    private suspend fun serverReport(doc: Document): String {
+        if (!showReport) return ""
+        val hosts = doc.select("a.stream-link-btn")
+            .map { it.attr("href").replace(Regex("\\s+"), "") }
+            .filter { it.startsWith("http") }
+            .map { it.substringAfter("//").substringBefore("/") }
+            .distinct()
+            .take(6)
+        if (hosts.isEmpty()) {
+            return "[Debug] No server buttons found on this page. The site layout may have changed."
+        }
+        val lines = hosts.amap { h ->
+            val ok = try {
+                InetAddress.getByName(h)
+                true
+            } catch (e: Exception) {
+                false
+            }
+            if (ok) "OK: $h" else "NOT FOUND (blocked or dead): $h"
+        }
+        return "[Debug] Video servers:\n" + lines.joinToString("\n")
     }
 
     // ---------- link extraction ----------
