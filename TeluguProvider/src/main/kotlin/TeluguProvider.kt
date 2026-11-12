@@ -204,6 +204,26 @@ class TeluguProvider : MainAPI() {
         }
     }
 
+    // Many video hosts hide the video address inside "packed" JavaScript:
+    // eval(function(p,a,c,k,e,d){...}('payload',base,count,'w1|w2|..'.split('|'),0,{}))
+    // This opens it up so the address becomes readable.
+    private val packedRegex =
+        Regex("""\}\('(.*?)',(\d+),(\d+),'(.*?)'\.split\('\|'\)""", RegexOption.DOT_MATCHES_ALL)
+    private val wordRegex = Regex("""\b\w+\b""")
+
+    private fun unpackJs(text: String): String? {
+        val m = packedRegex.find(text) ?: return null
+        val payload = m.groupValues[1].replace("\\'", "'")
+        val radix = m.groupValues[2].toIntOrNull() ?: return null
+        if (radix < 2 || radix > 36) return null
+        val words = m.groupValues[4].split("|")
+        return wordRegex.replace(payload) { r ->
+            val idx = r.value.toIntOrNull(radix)
+            val w = if (idx != null && idx < words.size) words[idx] else ""
+            if (w.isEmpty()) r.value else w
+        }
+    }
+
     private val iframeRegex =
         Regex("""<iframe[^>]+src\s*=\s*["']([^"']+)["']""", RegexOption.IGNORE_CASE)
 
@@ -238,7 +258,7 @@ class TeluguProvider : MainAPI() {
         var ok = false
         try {
             val text = app.get(link, referer = referer, timeout = 10L).text.replace("\\/", "/")
-            ok = scanMedia(text, link, callback)
+            ok = scanMedia(text + "\n" + (unpackJs(text) ?: ""), link, callback)
 
             // Many hosts wrap the real player in an iframe: look one level deeper
             if (!ok) {
@@ -251,7 +271,7 @@ class TeluguProvider : MainAPI() {
                     }
                     try {
                         val t2 = app.get(src, referer = link, timeout = 10L).text.replace("\\/", "/")
-                        if (scanMedia(t2, src, callback)) ok = true
+                        if (scanMedia(t2 + "\n" + (unpackJs(t2) ?: ""), src, callback)) ok = true
                     } catch (e: CancellationException) {
                         throw e
                     } catch (e: Exception) {
@@ -279,19 +299,25 @@ class TeluguProvider : MainAPI() {
         subtitleCallback: (SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit
     ): Boolean {
+        // Count REAL video links. loadExtractor can say "true" for a known host even when
+        // it gave us no video, so we only trust the number of links actually delivered.
+        val count = java.util.concurrent.atomic.AtomicInteger(0)
+        val counted: (ExtractorLink) -> Unit = { l ->
+            count.incrementAndGet()
+            callback(l)
+        }
         return try {
-            var hit = loadExtractor(link, referer, subtitleCallback, callback)
-            if (!hit) hit = fallbackExtract(link, referer, callback)
-            if (!hit) {
+            loadExtractor(link, referer, subtitleCallback, counted)
+            if (count.get() == 0) fallbackExtract(link, referer, counted)
+            if (count.get() == 0) {
                 for (alt in alternates(link)) {
-                    if (loadExtractor(alt, referer, subtitleCallback, callback)) {
-                        hit = true
-                        break
-                    }
+                    loadExtractor(alt, referer, subtitleCallback, counted)
+                    if (count.get() > 0) break
                 }
             }
-            if (!hit) Log.d(tag, "no result for $link")
-            hit
+            val host = link.substringAfter("//").substringBefore("/")
+            Log.d(tag, "host=$host links=${count.get()}")
+            count.get() > 0
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
