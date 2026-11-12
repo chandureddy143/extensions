@@ -10,6 +10,8 @@ import org.jsoup.nodes.Document
 import org.jsoup.nodes.Element
 import java.net.InetAddress
 import java.net.URLEncoder
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicInteger
 
 class TeluguProvider : MainAPI() {
     // If the site changes its address, change ONLY this line.
@@ -114,8 +116,8 @@ class TeluguProvider : MainAPI() {
 
     // Shown at the bottom of the movie description inside the app:
     // which video servers this page lists, and whether your phone can find them.
-    // Set to false to hide it once everything works.
-    private val showReport = true
+    // Set to true only when you want to see it (it makes the movie page open slower).
+    private val showReport = false
 
     private suspend fun serverReport(doc: Document): String {
         if (!showReport) return ""
@@ -144,6 +146,16 @@ class TeluguProvider : MainAPI() {
 
     // Settings you can tweak
     private val maxLinks = 25                // max hosts tried per movie
+    private val cacheMs = 5 * 60 * 1000L     // reuse found links for 5 minutes
+
+    // Remembers the links found for a movie, so opening it again is instant
+    private class CachedLinks(
+        val time: Long,
+        val links: List<ExtractorLink>,
+        val subs: List<SubtitleFile>
+    )
+
+    private val linkCache = ConcurrentHashMap<String, CachedLinks>()
 
     private val whitespace = Regex("\\s+")
     private val urlRegex = Regex("""https?://[^\s"'<>\\)]+""")
@@ -296,23 +308,27 @@ class TeluguProvider : MainAPI() {
     private suspend fun extractOne(
         link: String,
         referer: String,
+        total: AtomicInteger,
         subtitleCallback: (SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit
     ): Boolean {
         // Count REAL video links. loadExtractor can say "true" for a known host even when
         // it gave us no video, so we only trust the number of links actually delivered.
-        val count = java.util.concurrent.atomic.AtomicInteger(0)
+        // "total" counts links from ALL hosts: once any host has delivered, the slower
+        // backup methods are skipped so the movie starts sooner.
+        val count = AtomicInteger(0)
         val counted: (ExtractorLink) -> Unit = { l ->
             count.incrementAndGet()
+            total.incrementAndGet()
             callback(l)
         }
         return try {
             loadExtractor(link, referer, subtitleCallback, counted)
-            if (count.get() == 0) fallbackExtract(link, referer, counted)
-            if (count.get() == 0) {
+            if (count.get() == 0 && total.get() == 0) fallbackExtract(link, referer, counted)
+            if (count.get() == 0 && total.get() == 0) {
                 for (alt in alternates(link)) {
                     loadExtractor(alt, referer, subtitleCallback, counted)
-                    if (count.get() > 0) break
+                    if (count.get() > 0 || total.get() > 0) break
                 }
             }
             val host = link.substringAfter("//").substringBefore("/")
@@ -332,7 +348,28 @@ class TeluguProvider : MainAPI() {
         subtitleCallback: (SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit
     ): Boolean {
-        // Open the movie page, up to 3 tries with a short pause in between
+        // Opened this movie in the last few minutes? Reuse the links, no waiting.
+        val cached = linkCache[data]
+        if (cached != null && System.currentTimeMillis() - cached.time < cacheMs) {
+            cached.subs.forEach { subtitleCallback(it) }
+            cached.links.forEach { callback(it) }
+            Log.d(tag, "served ${cached.links.size} links from memory")
+            return true
+        }
+
+        // Remember everything we deliver, so it can be reused next time
+        val gotLinks = java.util.Collections.synchronizedList(mutableListOf<ExtractorLink>())
+        val gotSubs = java.util.Collections.synchronizedList(mutableListOf<SubtitleFile>())
+        val cb: (ExtractorLink) -> Unit = { l ->
+            gotLinks.add(l)
+            callback(l)
+        }
+        val scb: (SubtitleFile) -> Unit = { s ->
+            gotSubs.add(s)
+            subtitleCallback(s)
+        }
+
+        // Open the movie page, up to 3 tries
         var res: NiceResponse? = null
         for (i in 1..3) {
             try {
@@ -395,10 +432,10 @@ class TeluguProvider : MainAPI() {
         val external = useful.filter { !it.startsWith(mainUrl) }.toMutableSet()
 
         // 4) follow same-site embed / ajax endpoints once
-        internal
+        val extra: List<List<String>> = internal
             .filter { embedHint.containsMatchIn(it) && !it.contains("/category/") && !it.endsWith(".html") }
             .take(8)
-            .forEach { u ->
+            .amap { u ->
                 try {
                     val r = app.get(
                         u,
@@ -410,22 +447,29 @@ class TeluguProvider : MainAPI() {
                     collectUrls(r.text, sub)
                     sub.map { it.replace(whitespace, "") }
                         .filter { isUseful(it) && !it.startsWith(mainUrl) }
-                        .forEach { external.add(it) }
                 } catch (e: CancellationException) {
                     throw e
-                } catch (_: Exception) {
+                } catch (e: Exception) {
+                    emptyList<String>()
                 }
             }
+        extra.forEach { list -> list.forEach { external.add(it) } }
 
         val hosts = external.map { it.substringAfter("//").substringBefore("/") }.distinct()
         Log.d(tag, "external=${external.size} hosts=$hosts")
 
         // 5) try all hosts AT THE SAME TIME (amap = run in parallel)
+        val total = AtomicInteger(0)
         val results = external.take(maxLinks).toList().amap { link ->
-            extractOne(link, data, subtitleCallback, callback)
+            extractOne(link, data, total, scb, cb)
         }
         val ok = results.any { it }
-        Log.d(tag, "final ok=$ok")
+        Log.d(tag, "final ok=$ok links=${gotLinks.size}")
+
+        if (ok && gotLinks.isNotEmpty()) {
+            if (linkCache.size > 50) linkCache.clear()
+            linkCache[data] = CachedLinks(System.currentTimeMillis(), gotLinks.toList(), gotSubs.toList())
+        }
         return ok
     }
 }
