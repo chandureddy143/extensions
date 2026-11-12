@@ -204,6 +204,31 @@ class TeluguProvider : MainAPI() {
         }
     }
 
+    private val iframeRegex =
+        Regex("""<iframe[^>]+src\s*=\s*["']([^"']+)["']""", RegexOption.IGNORE_CASE)
+
+    // Looks for .m3u8 / .mp4 addresses inside a page's text and hands them to Cloudstream
+    private suspend fun scanMedia(
+        text: String,
+        pageUrl: String,
+        callback: (ExtractorLink) -> Unit
+    ): Boolean {
+        var found = false
+        val items = mediaRegex.findAll(text).map { it.value }.distinct().toList()
+        for (m in items) {
+            val isM3u8 = m.contains(".m3u8")
+            callback(
+                newExtractorLink(name, name, m) {
+                    this.type = if (isM3u8) ExtractorLinkType.M3U8 else ExtractorLinkType.VIDEO
+                    this.referer = pageUrl
+                    this.quality = Qualities.Unknown.value
+                }
+            )
+            found = true
+        }
+        return found
+    }
+
     // Used when Cloudstream has no built-in extractor for a video host
     private suspend fun fallbackExtract(
         link: String,
@@ -213,16 +238,30 @@ class TeluguProvider : MainAPI() {
         var ok = false
         try {
             val text = app.get(link, referer = referer, timeout = 10L).text.replace("\\/", "/")
-            mediaRegex.findAll(text).map { it.value }.distinct().forEach { m ->
-                val isM3u8 = m.contains(".m3u8")
-                callback(
-                    newExtractorLink(name, name, m) {
-                        this.type = if (isM3u8) ExtractorLinkType.M3U8 else ExtractorLinkType.VIDEO
-                        this.referer = link
-                        this.quality = Qualities.Unknown.value
+            ok = scanMedia(text, link, callback)
+
+            // Many hosts wrap the real player in an iframe: look one level deeper
+            if (!ok) {
+                val frames = iframeRegex.findAll(text).map { it.groupValues[1] }.distinct().take(3).toList()
+                for (f in frames) {
+                    val src = when {
+                        f.startsWith("//") -> "https:$f"
+                        f.startsWith("http") -> f
+                        else -> continue
                     }
-                )
-                ok = true
+                    try {
+                        val t2 = app.get(src, referer = link, timeout = 10L).text.replace("\\/", "/")
+                        if (scanMedia(t2, src, callback)) ok = true
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (e: Exception) {
+                        Log.w(tag, "iframe failed for $src : ${e.javaClass.simpleName}")
+                    }
+                }
+            }
+
+            if (!ok) {
+                Log.d(tag, "no media in $link : " + text.take(300).replace("\n", " "))
             }
         } catch (e: CancellationException) {
             throw e
@@ -251,6 +290,7 @@ class TeluguProvider : MainAPI() {
                     }
                 }
             }
+            if (!hit) Log.d(tag, "no result for $link")
             hit
         } catch (e: CancellationException) {
             throw e
