@@ -5,8 +5,6 @@ import android.util.Log
 import com.lagradost.cloudstream3.*
 import com.lagradost.cloudstream3.utils.*
 import com.lagradost.nicehttp.NiceResponse
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.coroutines.cancellation.CancellationException
 import org.jsoup.nodes.Document
 import org.jsoup.nodes.Element
@@ -520,32 +518,40 @@ class TeluguProvider : MainAPI() {
             count.incrementAndGet()
             callback(l)
         }
+        // Soft per-host time limit: checked between steps, so one dead host
+        // cannot keep trying alternates forever.
+        val deadline = System.currentTimeMillis() + hostTimeoutMs
+        fun timeUp(): Boolean = System.currentTimeMillis() > deadline
+        val alts = if (deep) alternates(link).take(4) else emptyList()
+
         return try {
             // Step 1: CloudStream's built-in extractor on the raw URL
             loadExtractor(link, referer, subtitleCallback, counted)
 
             // Step 2: alternate canonical domains & /e/ embed paths on built-in extractors
             if (deep && count.get() == 0) {
-                for (alt in alternates(link)) {
+                for (alt in alts) {
+                    if (timeUp()) break
                     loadExtractor(alt, referer, subtitleCallback, counted)
                     if (count.get() > 0) break
                 }
             }
 
             // Step 3: custom fallback on the raw URL
-            if (count.get() == 0) {
+            if (count.get() == 0 && !timeUp()) {
                 fallbackExtract(link, referer, label, 0, counted)
             }
 
             // Step 4: custom fallback on alternates
             if (deep && count.get() == 0) {
-                for (alt in alternates(link)) {
+                for (alt in alts) {
+                    if (timeUp()) break
                     if (fallbackExtract(alt, referer, label, 0, counted)) break
                 }
             }
 
             // Step 5: last chance built-in extractor with mainUrl as referer
-            if (count.get() == 0) {
+            if (count.get() == 0 && !timeUp()) {
                 loadExtractor(link, mainUrl, subtitleCallback, counted)
             }
 
@@ -605,7 +611,6 @@ class TeluguProvider : MainAPI() {
             } catch (e: Exception) {
                 Log.w(tag, "page try$i failed: ${e.javaClass.simpleName}")
             }
-            if (i < 3) delay(500L)
         }
 
         val page = res ?: return false
@@ -640,7 +645,7 @@ class TeluguProvider : MainAPI() {
         val labels = ConcurrentHashMap<String, String>()   // url -> button name (Streamwish, ...)
 
         // 0a) Named server buttons (Streamlare, Uperbox, Easysyncr, Download, Streamwish, Filelions ...)
-        contentScope.select("a.stream-link-btn").forEach { el ->
+        doc.select("a.stream-link-btn").filter { !it.inSidebar() }.forEach { el ->
             val u = absolute(el.attr("href"), origin) ?: return@forEach
             val lbl = el.text().trim()
             priorityButtons.add(u)
@@ -773,13 +778,11 @@ class TeluguProvider : MainAPI() {
 
         Log.d(tag, "external=${external.size} buttons=${buttonLinks.size} known=${known.size} tried=${ordered.size} hosts=${ordered.map { hostOf(it) }.distinct()}")
 
-        // 5) Try hosts in parallel, each with its own hard timeout
+        // 5) Try hosts in parallel; each host stops itself after hostTimeoutMs (soft deadline)
         val results = ordered.amap { link ->
             val label = labels[link]
             val deep = isKnownHost(link) || label != null
-            withTimeoutOrNull(hostTimeoutMs) {
-                extractOne(link, data, label, deep, scb, cb)
-            } ?: false
+            extractOne(link, data, label, deep, scb, cb)
         }
         val ok = results.any { it } || gotLinks.isNotEmpty()
         Log.d(tag, "final ok=$ok links=${gotLinks.size}")
