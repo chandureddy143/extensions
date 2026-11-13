@@ -1,4 +1,4 @@
-version = 19
+version = 20
 
 cloudstream {
     description = "MovieRulz Telugu Provider"
