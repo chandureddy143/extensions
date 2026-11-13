@@ -142,7 +142,7 @@ class TeluguProvider : MainAPI() {
 
     // ---------- link extraction ----------
 
-    private val maxLinks = 60                // High cap so no valid host is ever dropped
+    private val maxLinks = 40                // High cap so no valid host is ever dropped
     private val cacheMs = 5 * 60 * 1000L     // Reuse found links for 5 minutes
 
     private class CachedLinks(
@@ -160,14 +160,14 @@ class TeluguProvider : MainAPI() {
 
     private val skipExt = listOf(
         ".jpg", ".jpeg", ".png", ".gif", ".webp", ".svg",
-        ".css", ".js", ".ico", ".woff", ".woff2", ".ttf", ".eot"
+        ".css", ".js", ".ico", ".woff", ".woff2", ".ttf", ".eot", ".torrent"
     )
     private val skipHost = listOf(
         "googleapis", "google-analytics", "googletagmanager", "gstatic",
         "facebook", "twitter", "w3.org", "schema.org", "wordpress.org",
         "cdnjs.cloudflare.com", "whatsapp", "//t.me", "telegram", "instagram",
         "cloudflareinsights", "acscdn.com", "doubleclick", "googlesyndication",
-        "histats.com", "juicyads", "exoclick", "popads", "propellerads"
+        "histats.com", "juicyads", "exoclick", "popads", "propellerads", "imdb.com"
     )
     private val embedHint =
         Regex("ajax|embed|player|server|stream|api|source|watch|episode|iframe", RegexOption.IGNORE_CASE)
@@ -215,35 +215,60 @@ class TeluguProvider : MainAPI() {
         }
     }
 
-    // Maps rotated/custom domains to standard domains that CloudStream's built-in extractors recognize
+    // Converts landing URLs into /e/ embed URLs and known mirror domains so all servers resolve
     private fun alternates(link: String): List<String> {
-        val id = link.trimEnd('/').substringAfterLast('/').substringBefore('?')
+        val clean = link.trimEnd('/')
+        val id = clean.substringAfterLast('/').substringBefore('?')
             .removePrefix("e/").removePrefix("v/").removePrefix("d/").removePrefix("f/")
+            .removePrefix("embed-").removeSuffix(".html")
         if (id.isBlank()) return emptyList()
         val h = hostOf(link)
-        return when {
-            h.contains("hglink") || h.contains("wish") || h.contains("easysyncr") || h.contains("streamhg") -> listOf(
-                "https://streamwish.to/e/$id",
-                "https://hlswish.com/e/$id",
-                "https://wishembed.pro/e/$id",
-                "https://sfastwish.com/e/$id"
+        val origin = originOf(link)
+
+        val list = mutableListOf(
+            "$origin/e/$id",
+            "$origin/v/$id",
+            "$origin/embed-$id.html"
+        )
+        when {
+            h.contains("hglink") || h.contains("streamhg") -> list.addAll(
+                listOf(
+                    "https://hglink.to/e/$id",
+                    "https://cavanhabg.com/e/$id",
+                    "https://dumbalag.com/e/$id",
+                    "https://streamwish.to/e/$id",
+                    "https://hlswish.com/e/$id"
+                )
             )
-            h.contains("minochinos") || h.contains("lions") || h.contains("vidhide") || h.contains("uperbox") -> listOf(
-                "https://filelions.to/v/$id",
-                "https://vidhide.com/v/$id",
-                "https://vidhidepro.com/v/$id",
-                "https://dlions.pro/v/$id"
+            h.contains("minochinos") || h.contains("lions") || h.contains("vidhide") -> list.addAll(
+                listOf(
+                    "https://minochinos.com/e/$id",
+                    "https://filelions.to/v/$id",
+                    "https://vidhide.com/v/$id",
+                    "https://vidhidepro.com/v/$id",
+                    "https://streamwish.to/e/$id"
+                )
             )
-            h.contains("dood") || h.contains("d000") || h.contains("ds2play") -> listOf(
-                "https://dood.to/e/$id",
-                "https://d000d.com/e/$id"
+            h.contains("streamvin") -> list.addAll(
+                listOf(
+                    "https://streamvin.com/e/$id",
+                    "https://streamvin.com/embed-$id.html"
+                )
             )
-            h.contains("lulu") -> listOf(
-                "https://lulustream.com/e/$id",
-                "https://luluvdo.com/e/$id"
+            h.contains("dood") || h.contains("d000") || h.contains("ds2play") -> list.addAll(
+                listOf(
+                    "https://dood.to/e/$id",
+                    "https://d000d.com/e/$id"
+                )
             )
-            else -> emptyList()
+            h.contains("lulu") -> list.addAll(
+                listOf(
+                    "https://lulustream.com/e/$id",
+                    "https://luluvdo.com/e/$id"
+                )
+            )
         }
+        return list.distinct().filter { it != link }
     }
 
     // Unpacks ALL eval(function(p,a,c,k,e,d)...) blocks on a page (not just the first one)
@@ -376,22 +401,19 @@ class TeluguProvider : MainAPI() {
     private suspend fun extractOne(
         link: String,
         referer: String,
-        total: AtomicInteger,
         subtitleCallback: (SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit
     ): Boolean {
-        // Every host gets ALL its methods tried, even if other hosts already delivered.
         val count = AtomicInteger(0)
         val counted: (ExtractorLink) -> Unit = { l ->
             count.incrementAndGet()
-            total.incrementAndGet()
             callback(l)
         }
         return try {
             // Step 1: Try CloudStream's built-in extractor on the raw URL
             loadExtractor(link, referer, subtitleCallback, counted)
 
-            // Step 2: Try alternate canonical domains on CloudStream's built-in extractors
+            // Step 2: Try alternate canonical domains & /e/ embed paths on built-in extractors
             if (count.get() == 0) {
                 for (alt in alternates(link)) {
                     loadExtractor(alt, referer, subtitleCallback, counted)
@@ -399,19 +421,19 @@ class TeluguProvider : MainAPI() {
                 }
             }
 
-            // Step 3: Deep custom fallback if built-in extractors produced 0 links
+            // Step 3: Deep custom fallback on the raw URL
             if (count.get() == 0) {
                 fallbackExtract(link, referer, 0, counted)
             }
 
-            // Step 4: If raw link was a dead mirror domain, try deep fallback on alternate domains too
+            // Step 4: Deep custom fallback on /e/ embed paths and alternate domains
             if (count.get() == 0) {
                 for (alt in alternates(link)) {
                     if (fallbackExtract(alt, referer, 0, counted)) break
                 }
             }
 
-            // Step 5: last chance, ask the built-in extractor again with the site's home page as referer
+            // Step 5: Last chance built-in extractor with mainUrl as referer
             if (count.get() == 0) {
                 loadExtractor(link, mainUrl, subtitleCallback, counted)
             }
@@ -477,12 +499,15 @@ class TeluguProvider : MainAPI() {
         val page = res ?: return false
         val doc = page.document
 
-        // Priority list: explicit stream buttons always go first so they are never truncated
+        // Scope strictly to the movie post area so sidebar/related movies are never picked up
+        val contentScope: Element =
+            doc.selectFirst(".entry-content") ?: doc.selectFirst("#main") ?: doc
+
         val priorityButtons = linkedSetOf<String>()
         val rawFound = linkedSetOf<String>()
 
-        // 0) Explicit stream-link-btn links + direct iframes in the post content
-        doc.select("a.stream-link-btn, .entry-content iframe, #main iframe, .entry-content a[target=_blank]").forEach { el ->
+        // 0) Explicit stream-link-btn links + direct iframes inside the movie post content
+        contentScope.select("a.stream-link-btn, iframe, a[target=_blank]").forEach { el ->
             val raw = (el.attr("href").ifBlank { el.attr("src") }).replace(whitespace, "")
             when {
                 raw.startsWith("http") -> priorityButtons.add(raw)
@@ -491,8 +516,8 @@ class TeluguProvider : MainAPI() {
             }
         }
 
-        // 1) Every attribute of every element
-        doc.allElements.forEach { el ->
+        // 1) Attributes inside contentScope only (prevents sidebar/footer movies from leaking in)
+        contentScope.allElements.forEach { el ->
             el.attributes().forEach { attr ->
                 val v = attr.value.trim()
                 when {
@@ -506,9 +531,8 @@ class TeluguProvider : MainAPI() {
             }
         }
 
-        // 2) Raw HTML + inline scripts
-        collectUrls(page.text, rawFound)
-        doc.select("script").forEach { s ->
+        // 2) Scripts inside contentScope only
+        contentScope.select("script").forEach { s ->
             collectUrls(s.data(), rawFound)
             base64InScript.findAll(s.data()).forEach { m ->
                 tryBase64(m.groupValues[1])?.let { d ->
@@ -534,7 +558,6 @@ class TeluguProvider : MainAPI() {
         useful.filter { !it.startsWith(mainUrl) }.forEach { external.add(it) }
 
         // 4) Follow same-site embed / ajax endpoints in parallel
-        // Same-site links that look like players, plus ALL same-site server buttons
         val followList = (
             internal.filter { embedHint.containsMatchIn(it) } +
                 priorityButtons.filter { it.startsWith(mainUrl) }
@@ -560,7 +583,6 @@ class TeluguProvider : MainAPI() {
                     val out = sub.map { it.replace(whitespace, "") }
                         .filter { isUseful(it) && !it.startsWith(mainUrl) }
                         .toMutableList()
-                    // A redirect-style button: the address we landed on IS the video host
                     val landed = r.url
                     if (landed.startsWith("http") && !landed.startsWith(mainUrl) && isUseful(landed)) {
                         out.add(landed)
@@ -577,14 +599,9 @@ class TeluguProvider : MainAPI() {
         val hosts = external.map { hostOf(it) }.distinct()
         Log.d(tag, "external=${external.size} hosts=$hosts")
 
-        // 5) Also scan the movie page itself for direct .m3u8 / .mp4 links
-        //    (this can include trailers or ads, but it is better to have too many links than none)
-        scanMedia(page.text + "\n" + unpackAllJs(page.text), data, cb)
-
-        // 6) Try ALL external hosts in parallel, every method on every host
-        val total = AtomicInteger(0)
+        // 5) Try ALL external hosts in parallel — every host runs its full fallback chain
         val results = external.take(maxLinks).toList().amap { link ->
-            extractOne(link, data, total, scb, cb)
+            extractOne(link, data, scb, cb)
         }
         val ok = results.any { it } || gotLinks.isNotEmpty()
         Log.d(tag, "final ok=$ok links=${gotLinks.size}")
