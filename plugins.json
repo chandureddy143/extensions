@@ -1,9 +1,9 @@
 [
     {
-        "fileHash": "sha256-009161fe8edd78e8e63781b20f562d43513f88b62682d21645bbef19f3785690",
+        "fileHash": "sha256-632b68d0051dd90e253dab4d4468ef75ba685723c99161af871c4a726ef8feff",
         "apiVersion": 1,
         "repositoryUrl": "https://github.com/chandureddy143/extensions",
-        "fileSize": 31267,
+        "fileSize": 36771,
         "status": 1,
         "authors": [
             "Chandu"
@@ -11,7 +11,7 @@
         "tvTypes": [
             "Movie"
         ],
-        "version": 15,
+        "version": 16,
         "internalName": "TeluguProvider",
         "description": "MovieRulz Telugu Provider",
         "url": "https://raw.githubusercontent.com/chandureddy143/extensions/builds/TeluguProvider.cs3",
